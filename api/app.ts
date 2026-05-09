@@ -17,12 +17,15 @@ const __dirname = path.dirname(__filename)
 dotenv.config()
 
 const app: express.Application = express()
+const isProduction = process.env.NODE_ENV === 'production'
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')))
+if (isProduction) {
+  app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')))
+}
 
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
@@ -77,6 +80,13 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
     error: 'Server internal error',
   })
 })
+
+if (isProduction) {
+  app.use(express.static(path.join(__dirname, '..', 'dist')))
+  app.get('*', (req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  })
+}
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({
