@@ -3,7 +3,10 @@
   "build": {
     "builder": "NIXPACKS",
     "nixpacks": {
-      "aptPackages": ["build-essential", "python3", "make", "g++"]
+      "aptPackages": ["build-essential", "python3", "make", "g++", "gcc", "c++"],
+      "env": {
+        "NIXPACKS_ALPHA_PIN": "1"
+      }
     }
   },
   "deploy": {
