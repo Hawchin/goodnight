@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/zeabur.json",
+  "build": {
+    "builder": "nixpacks",
+    "options": {
+      "nixpacksVersion": "1.24.0"
+    }
+  },
+  "deploy": {
+    "replicas": 1,
+    " restartPolicy": {
+      "type": "OnFailure",
+      "retries": 10
+    }
+  }
+}
