@@ -9,15 +9,9 @@
       "destination": "/index.html"
     }
   ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        }
-      ]
-    }
-  ]
+  "env": {
+    "SUPABASE_URL": "https://aktuauhkppmmqhjfuzrw.supabase.co",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdHVhdWhrcHBtbXFoamZ1enJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0MTMzMTAsImV4cCI6MjA5Mzk4OTMxMH0.1N5uj9_eR4aQKZUy6fvEYXKbR2IPQZqwy1vzl-niNPY",
+    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdHVhdWhrcHBtbXFoamZ1enJ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODQxMzMxMCwiZXhwIjoyMDkzOTg5MzEwfQ.3KOmPZHl2WCCysuFWsMSXZTzZfMiSb_VZlKzGM_uZEw"
+  }
 }

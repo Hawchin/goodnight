@@ -52,9 +52,9 @@ const cpUpload = upload.fields([
   { name: 'audio', maxCount: 1 }
 ])
 
-router.get('/random', (req: Request, res: Response): void => {
+router.get('/random', async (req: Request, res: Response): Promise<void> => {
   try {
-    const submission = getRandomApprovedSubmission()
+    const submission = await getRandomApprovedSubmission()
     if (!submission) {
       res.status(404).json({ success: false, error: '暂无已审核的投稿' })
       return
@@ -116,7 +116,7 @@ router.post('/', cpUpload, async (req: Request, res: Response): Promise<void> =>
       status = 'pending'
     }
 
-    const id = createSubmission({
+    const id = await createSubmission({
       types: JSON.stringify(parsedTypes),
       text_content: textContent || null,
       image_urls: imageUrls.length > 0 ? JSON.stringify(imageUrls) : null,

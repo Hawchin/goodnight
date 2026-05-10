@@ -26,7 +26,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    const user = getAdminUser(username)
+    const user = await getAdminUser(username)
     if (!user) {
       res.status(401).json({ success: false, error: '用户名或密码错误' })
       return
@@ -52,7 +52,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
 router.use(authenticate)
 
-router.get('/submissions', (req: AuthRequest, res: Response): void => {
+router.get('/submissions', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const type = req.query.type as string | undefined
     const status = req.query.status as string | undefined
@@ -60,14 +60,14 @@ router.get('/submissions', (req: AuthRequest, res: Response): void => {
     const page = parseInt(req.query.page as string) || 1
     const limit = parseInt(req.query.limit as string) || 20
 
-    const result = getSubmissions({ type, status, search, page, limit })
+    const result = await getSubmissions({ type, status, search, page, limit })
     res.json({ success: true, ...result })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.put('/submissions/batch', (req: AuthRequest, res: Response): void => {
+router.put('/submissions/batch', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { ids, status } = req.body
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -79,14 +79,14 @@ router.put('/submissions/batch', (req: AuthRequest, res: Response): void => {
       return
     }
 
-    const count = batchUpdateStatus(ids, status)
+    const count = await batchUpdateStatus(ids, status)
     res.json({ success: true, count })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.delete('/submissions/batch', (req: AuthRequest, res: Response): void => {
+router.delete('/submissions/batch', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { ids } = req.body
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -94,14 +94,14 @@ router.delete('/submissions/batch', (req: AuthRequest, res: Response): void => {
       return
     }
 
-    const count = batchDeleteSubmissions(ids)
+    const count = await batchDeleteSubmissions(ids)
     res.json({ success: true, count })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.put('/submissions/:id/status', (req: AuthRequest, res: Response): void => {
+router.put('/submissions/:id/status', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = parseInt(req.params.id)
     const { status } = req.body
@@ -115,20 +115,20 @@ router.put('/submissions/:id/status', (req: AuthRequest, res: Response): void =>
       return
     }
 
-    const submission = getSubmissionById(id)
+    const submission = await getSubmissionById(id)
     if (!submission) {
       res.status(404).json({ success: false, error: '投稿不存在' })
       return
     }
 
-    updateSubmissionStatus(id, status)
+    await updateSubmissionStatus(id, status)
     res.json({ success: true })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.delete('/submissions/:id', (req: AuthRequest, res: Response): void => {
+router.delete('/submissions/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = parseInt(req.params.id)
     if (isNaN(id)) {
@@ -136,29 +136,29 @@ router.delete('/submissions/:id', (req: AuthRequest, res: Response): void => {
       return
     }
 
-    const submission = getSubmissionById(id)
+    const submission = await getSubmissionById(id)
     if (!submission) {
       res.status(404).json({ success: false, error: '投稿不存在' })
       return
     }
 
-    deleteSubmission(id)
+    await deleteSubmission(id)
     res.json({ success: true })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.get('/sensitive-words', (req: AuthRequest, res: Response): void => {
+router.get('/sensitive-words', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const words = getSensitiveWords()
+    const words = await getSensitiveWords()
     res.json({ success: true, words })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.post('/sensitive-words', (req: AuthRequest, res: Response): void => {
+router.post('/sensitive-words', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { word } = req.body
     if (!word || typeof word !== 'string' || word.trim().length === 0) {
@@ -166,7 +166,7 @@ router.post('/sensitive-words', (req: AuthRequest, res: Response): void => {
       return
     }
 
-    const id = addSensitiveWord(word.trim())
+    const id = await addSensitiveWord(word.trim())
     res.json({ success: true, id })
   } catch (error: any) {
     if (error.message?.includes('UNIQUE constraint')) {
@@ -177,7 +177,7 @@ router.post('/sensitive-words', (req: AuthRequest, res: Response): void => {
   }
 })
 
-router.delete('/sensitive-words/:id', (req: AuthRequest, res: Response): void => {
+router.delete('/sensitive-words/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = parseInt(req.params.id)
     if (isNaN(id)) {
@@ -185,16 +185,16 @@ router.delete('/sensitive-words/:id', (req: AuthRequest, res: Response): void =>
       return
     }
 
-    deleteSensitiveWord(id)
+    await deleteSensitiveWord(id)
     res.json({ success: true })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.get('/stats', (req: AuthRequest, res: Response): void => {
+router.get('/stats', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const stats = getStats()
+    const stats = await getStats()
     res.json({ success: true, data: stats })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })

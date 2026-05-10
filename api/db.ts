@@ -1,219 +1,255 @@
-import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
-import { fileURLToPath } from 'url'
+import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 import bcrypt from 'bcryptjs'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const supabaseUrl = process.env.SUPABASE_URL || 'https://aktuauhkppmmqhjfuzrw.supabase.co'
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdHVhdWhrcHBtbXFoamZ1enJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0MTMzMTAsImV4cCI6MjA5Mzk4OTMxMH0.1N5uj9_eR4aQKZUy6fvEYXKbR2IPQZqwy1vzl-niNPY'
 
-const dataDir = path.join(__dirname, '..', 'data')
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true })
-}
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  realtime: {
+    transport: ws
+  }
+})
 
-const uploadsImagesDir = path.join(__dirname, '..', 'uploads', 'images')
-const uploadsAudioDir = path.join(__dirname, '..', 'uploads', 'audio')
-if (!fs.existsSync(uploadsImagesDir)) {
-  fs.mkdirSync(uploadsImagesDir, { recursive: true })
-}
-if (!fs.existsSync(uploadsAudioDir)) {
-  fs.mkdirSync(uploadsAudioDir, { recursive: true })
-}
-
-const dbPath = path.join(dataDir, 'goodnight.db')
-const db = new Database(dbPath)
-
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS submissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    types TEXT NOT NULL,
-    text_content TEXT,
-    image_urls TEXT,
-    audio_url TEXT,
-    nickname TEXT,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions(status);
-  CREATE INDEX IF NOT EXISTS idx_submissions_created_at ON submissions(created_at DESC);
-
-  CREATE TABLE IF NOT EXISTS sensitive_words (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word TEXT NOT NULL UNIQUE,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS admin_users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL
-  );
-`)
-
-const existingAdmin = db.prepare('SELECT id FROM admin_users WHERE username = ?').get('admin')
-if (!existingAdmin) {
-  const passwordHash = bcrypt.hashSync('goodnight2026', 10)
-  db.prepare('INSERT INTO admin_users (username, password_hash) VALUES (?, ?)').run('admin', passwordHash)
-}
-
-const existingWords = db.prepare('SELECT COUNT(*) as count FROM sensitive_words').get() as { count: number }
-if (existingWords.count === 0) {
-  const initialWords = ['自杀', '死亡', '杀', '毒品', '赌博', '色情', '暴力', '反动', '政治', '上访', '抗议', '示威', '罢工', '邪教', '传销']
-  const insertWord = db.prepare('INSERT OR IGNORE INTO sensitive_words (word) VALUES (?)')
-  const insertMany = db.transaction((words: string[]) => {
-    for (const word of words) {
-      insertWord.run(word)
-    }
-  })
-  insertMany(initialWords)
-}
-
-export function getSubmissionById(id: number) {
-  return db.prepare('SELECT * FROM submissions WHERE id = ?').get(id)
-}
-
-export function getRandomApprovedSubmission() {
-  return db.prepare("SELECT * FROM submissions WHERE status = 'approved' ORDER BY RANDOM() LIMIT 1").get()
-}
-
-export function createSubmission(data: {
+export interface Submission {
+  id: number
   types: string
   text_content: string | null
   image_urls: string | null
   audio_url: string | null
   nickname: string | null
   status: string
-}) {
-  const stmt = db.prepare(
-    'INSERT INTO submissions (types, text_content, image_urls, audio_url, nickname, status) VALUES (?, ?, ?, ?, ?, ?)'
-  )
-  const result = stmt.run(data.types, data.text_content, data.image_urls, data.audio_url, data.nickname, data.status)
-  return result.lastInsertRowid
+  created_at: string
 }
 
-export function updateSubmissionStatus(id: number, status: string) {
-  return db.prepare('UPDATE submissions SET status = ? WHERE id = ?').run(status, id)
+export async function getSubmissionById(id: number): Promise<Submission | null> {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error) return null
+  return data as Submission
 }
 
-export function deleteSubmission(id: number) {
-  return db.prepare('DELETE FROM submissions WHERE id = ?').run(id)
+export async function getRandomApprovedSubmission(): Promise<Submission | null> {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('*')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+    .limit(20)
+  
+  if (error || !data || data.length === 0) return null
+  
+  const randomIndex = Math.floor(Math.random() * data.length)
+  return data[randomIndex] as Submission
 }
 
-export function getSubmissions(options: {
+export async function createSubmission(data: {
+  types: string
+  text_content: string | null
+  image_urls: string | null
+  audio_url: string | null
+  nickname: string | null
+  status: string
+}): Promise<number | null> {
+  const { data: result, error } = await supabase
+    .from('submissions')
+    .insert({
+      types: data.types,
+      text_content: data.text_content,
+      image_urls: data.image_urls,
+      audio_url: data.audio_url,
+      nickname: data.nickname,
+      status: data.status
+    })
+    .select('id')
+    .single()
+  
+  if (error) return null
+  return result?.id || null
+}
+
+export async function updateSubmissionStatus(id: number, status: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('submissions')
+    .update({ status })
+    .eq('id', id)
+  
+  return !error
+}
+
+export async function deleteSubmission(id: number): Promise<boolean> {
+  const { error } = await supabase
+    .from('submissions')
+    .delete()
+    .eq('id', id)
+  
+  return !error
+}
+
+export interface GetSubmissionsResult {
+  data: Submission[]
+  total: number
+  page: number
+  limit: number
+}
+
+export async function getSubmissions(options: {
   type?: string
   status?: string
   search?: string
   page: number
   limit: number
-}) {
+}): Promise<GetSubmissionsResult> {
   const { type, status, search, page, limit } = options
-  const conditions: string[] = []
-  const params: any[] = []
+  let query = supabase.from('submissions').select('*', { count: 'exact' })
 
   if (type) {
-    conditions.push("types LIKE ?")
-    params.push(`%"${type}"%`)
+    query = query.contains('types', `"${type}"`)
   }
   if (status) {
-    conditions.push('status = ?')
-    params.push(status)
+    query = query.eq('status', status)
   }
   if (search) {
-    conditions.push('(text_content LIKE ? OR nickname LIKE ?)')
-    params.push(`%${search}%`, `%${search}%`)
+    query = query.or(`text_content.ilike.%${search}%,nickname.ilike.%${search}%`)
   }
 
-  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
   const offset = (page - 1) * limit
+  query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1)
 
-  const countRow = db.prepare(`SELECT COUNT(*) as total FROM submissions ${whereClause}`).get(...params) as { total: number }
-  const rows = db.prepare(`SELECT * FROM submissions ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset)
+  const { data, error, count } = await query
 
   return {
-    data: rows,
-    total: countRow.total,
+    data: (data || []) as Submission[],
+    total: count || 0,
     page,
     limit
   }
 }
 
-export function batchUpdateStatus(ids: number[], status: string) {
-  const stmt = db.prepare('UPDATE submissions SET status = ? WHERE id = ?')
-  const updateMany = db.transaction((ids: number[], status: string) => {
-    let count = 0
-    for (const id of ids) {
-      const result = stmt.run(status, id)
-      if (result.changes > 0) count++
-    }
-    return count
-  })
-  return updateMany(ids, status)
+export async function batchUpdateStatus(ids: number[], status: string): Promise<number> {
+  let count = 0
+  for (const id of ids) {
+    const { error } = await supabase
+      .from('submissions')
+      .update({ status })
+      .eq('id', id)
+    
+    if (!error) count++
+  }
+  return count
 }
 
-export function batchDeleteSubmissions(ids: number[]) {
-  const stmt = db.prepare('DELETE FROM submissions WHERE id = ?')
-  const deleteMany = db.transaction((ids: number[]) => {
-    let count = 0
-    for (const id of ids) {
-      const result = stmt.run(id)
-      if (result.changes > 0) count++
-    }
-    return count
-  })
-  return deleteMany(ids)
+export async function batchDeleteSubmissions(ids: number[]): Promise<number> {
+  let count = 0
+  for (const id of ids) {
+    const { error } = await supabase
+      .from('submissions')
+      .delete()
+      .eq('id', id)
+    
+    if (!error) count++
+  }
+  return count
 }
 
-export function getSensitiveWords() {
-  return db.prepare('SELECT * FROM sensitive_words ORDER BY created_at DESC').all()
+export interface SensitiveWord {
+  id: number
+  word: string
+  created_at: string
 }
 
-export function addSensitiveWord(word: string) {
-  const stmt = db.prepare('INSERT INTO sensitive_words (word) VALUES (?)')
-  const result = stmt.run(word)
-  return result.lastInsertRowid
+export async function getSensitiveWords(): Promise<SensitiveWord[]> {
+  const { data, error } = await supabase
+    .from('sensitive_words')
+    .select('*')
+    .order('created_at', { ascending: false })
+  
+  if (error) return []
+  return data as SensitiveWord[]
 }
 
-export function deleteSensitiveWord(id: number) {
-  return db.prepare('DELETE FROM sensitive_words WHERE id = ?').run(id)
+export async function addSensitiveWord(word: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('sensitive_words')
+    .insert({ word })
+    .select('id')
+    .single()
+  
+  if (error) return null
+  return data?.id || null
 }
 
-export function getAllSensitiveWords() {
-  return db.prepare('SELECT word FROM sensitive_words').all() as { word: string }[]
+export async function deleteSensitiveWord(id: number): Promise<boolean> {
+  const { error } = await supabase
+    .from('sensitive_words')
+    .delete()
+    .eq('id', id)
+  
+  return !error
 }
 
-export function getAdminUser(username: string) {
-  return db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username) as {
-    id: number
-    username: string
-    password_hash: string
-  } | undefined
+export async function getAllSensitiveWords(): Promise<{ word: string }[]> {
+  const { data, error } = await supabase
+    .from('sensitive_words')
+    .select('word')
+  
+  if (error) return []
+  return data as { word: string }[]
 }
 
-export function getStats() {
-  const total = (db.prepare('SELECT COUNT(*) as count FROM submissions').get() as { count: number }).count
-  const approved = (db.prepare("SELECT COUNT(*) as count FROM submissions WHERE status = 'approved'").get() as { count: number }).count
-  const rejected = (db.prepare("SELECT COUNT(*) as count FROM submissions WHERE status = 'rejected'").get() as { count: number }).count
-  const pending = (db.prepare("SELECT COUNT(*) as count FROM submissions WHERE status = 'pending'").get() as { count: number }).count
-  const textCount = (db.prepare("SELECT COUNT(*) as count FROM submissions WHERE types LIKE '%text%'").get() as { count: number }).count
-  const imageCount = (db.prepare("SELECT COUNT(*) as count FROM submissions WHERE types LIKE '%image%'").get() as { count: number }).count
-  const audioCount = (db.prepare("SELECT COUNT(*) as count FROM submissions WHERE types LIKE '%audio%'").get() as { count: number }).count
+export interface AdminUser {
+  id: number
+  username: string
+  password_hash: string
+}
 
-  return {
-    total,
-    approved,
-    rejected,
-    pending,
-    byType: {
-      text: textCount,
-      image: imageCount,
-      audio: audioCount
-    }
+export async function getAdminUser(username: string): Promise<AdminUser | undefined> {
+  const { data, error } = await supabase
+    .from('admin_users')
+    .select('*')
+    .eq('username', username)
+    .single()
+  
+  if (error) return undefined
+  return data as AdminUser
+}
+
+export interface StatsResult {
+  total: number
+  approved: number
+  rejected: number
+  pending: number
+  byType: {
+    text: number
+    image: number
+    audio: number
   }
 }
 
-export default db
+export async function getStats(): Promise<StatsResult> {
+  const [totalRes, approvedRes, rejectedRes, pendingRes, textRes, imageRes, audioRes] = await Promise.all([
+    supabase.from('submissions').select('id', { count: 'exact' }).limit(0),
+    supabase.from('submissions').select('id', { count: 'exact' }).eq('status', 'approved').limit(0),
+    supabase.from('submissions').select('id', { count: 'exact' }).eq('status', 'rejected').limit(0),
+    supabase.from('submissions').select('id', { count: 'exact' }).eq('status', 'pending').limit(0),
+    supabase.from('submissions').select('id', { count: 'exact' }).contains('types', '"text"').limit(0),
+    supabase.from('submissions').select('id', { count: 'exact' }).contains('types', '"image"').limit(0),
+    supabase.from('submissions').select('id', { count: 'exact' }).contains('types', '"audio"').limit(0)
+  ])
+
+  return {
+    total: totalRes.count || 0,
+    approved: approvedRes.count || 0,
+    rejected: rejectedRes.count || 0,
+    pending: pendingRes.count || 0,
+    byType: {
+      text: textRes.count || 0,
+      image: imageRes.count || 0,
+      audio: audioRes.count || 0
+    }
+  }
+}
