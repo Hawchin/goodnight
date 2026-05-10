@@ -8,7 +8,8 @@ import {
 } from 'lucide-react'
 
 interface Submission {
-  id: number
+  id: string
+  _id: string
   types: string
   text_content: string | null
   image_urls: string | null
@@ -19,7 +20,8 @@ interface Submission {
 }
 
 interface SensitiveWord {
-  id: number
+  id: string
+  _id: string
   word: string
   created_at: string
 }
@@ -106,7 +108,7 @@ function SubmissionsTab({ token }: { token: string }) {
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const limit = 10
 
@@ -143,7 +145,7 @@ function SubmissionsTab({ token }: { token: string }) {
 
   const totalPages = Math.ceil(total / limit)
 
-  const updateStatus = async (id: number, status: string) => {
+  const updateStatus = async (id: string, status: string) => {
     try {
       const res = await fetch(`/api/admin/submissions/${id}/status`, {
         method: 'PUT',
@@ -160,7 +162,7 @@ function SubmissionsTab({ token }: { token: string }) {
     }
   }
 
-  const deleteItem = async (id: number) => {
+  const deleteItem = async (id: string) => {
     if (!confirm('确定删除该投稿？')) return
     try {
       const res = await fetch(`/api/admin/submissions/${id}`, {
@@ -213,7 +215,7 @@ function SubmissionsTab({ token }: { token: string }) {
     }
   }
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -226,7 +228,7 @@ function SubmissionsTab({ token }: { token: string }) {
     if (selected.size === submissions.length) {
       setSelected(new Set())
     } else {
-      setSelected(new Set(submissions.map((s) => s.id)))
+      setSelected(new Set(submissions.map((s) => s._id || s.id)))
     }
   }
 
@@ -335,13 +337,13 @@ function SubmissionsTab({ token }: { token: string }) {
           </div>
 
           {submissions.map((sub) => (
-            <div key={sub.id} className="glass-card p-3 sm:grid sm:grid-cols-[40px_80px_1fr_80px_80px_100px_120px] sm:gap-2 sm:items-center flex flex-col gap-2">
+            <div key={sub._id || sub.id} className="glass-card p-3 sm:grid sm:grid-cols-[40px_80px_1fr_80px_80px_100px_120px] sm:gap-2 sm:items-center flex flex-col gap-2">
               <div className="flex items-center gap-2 sm:gap-0">
-                <input type="checkbox" checked={selected.has(sub.id)} onChange={() => toggleSelect(sub.id)} className="rounded" />
-                <span className="sm:hidden text-cream/40 text-xs font-body">#{sub.id}</span>
-                <span className="hidden sm:block text-cream/50 text-xs font-body">#{sub.id}</span>
+                <input type="checkbox" checked={selected.has(sub._id || sub.id)} onChange={() => toggleSelect(sub._id || sub.id)} className="rounded" />
+                <span className="sm:hidden text-cream/40 text-xs font-body">#{sub._id || sub.id}</span>
+                <span className="hidden sm:block text-cream/50 text-xs font-body">#{sub._id || sub.id}</span>
               </div>
-              <span className="hidden sm:block text-cream/50 text-xs font-body">#{sub.id}</span>
+              <span className="hidden sm:block text-cream/50 text-xs font-body">#{sub._id || sub.id}</span>
               <p className="text-cream/80 text-sm font-body truncate">
                 {sub.text_content || (sub.image_urls ? '[图片投稿]' : '[音频投稿]')}
               </p>
@@ -350,16 +352,16 @@ function SubmissionsTab({ token }: { token: string }) {
               <span className="text-cream/40 text-xs font-body truncate">{sub.nickname || '匿名'}</span>
               <div className="flex items-center gap-1">
                 {sub.status !== 'approved' && (
-                  <button onClick={() => updateStatus(sub.id, 'approved')} className="p-1 rounded hover:bg-green-400/20 text-green-400 transition-colors" title="通过">
+                  <button onClick={() => updateStatus(sub._id || sub.id, 'approved')} className="p-1 rounded hover:bg-green-400/20 text-green-400 transition-colors" title="通过">
                     <Check className="w-4 h-4" />
                   </button>
                 )}
                 {sub.status !== 'rejected' && (
-                  <button onClick={() => updateStatus(sub.id, 'rejected')} className="p-1 rounded hover:bg-soft-pink/20 text-soft-pink transition-colors" title="拒绝">
+                  <button onClick={() => updateStatus(sub._id || sub.id, 'rejected')} className="p-1 rounded hover:bg-soft-pink/20 text-soft-pink transition-colors" title="拒绝">
                     <X className="w-4 h-4" />
                   </button>
                 )}
-                <button onClick={() => deleteItem(sub.id)} className="p-1 rounded hover:bg-red-400/20 text-red-400 transition-colors" title="删除">
+                <button onClick={() => deleteItem(sub._id || sub.id)} className="p-1 rounded hover:bg-red-400/20 text-red-400 transition-colors" title="删除">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -439,7 +441,7 @@ function SensitiveTab({ token }: { token: string }) {
     }
   }
 
-  const deleteWord = async (id: number) => {
+  const deleteWord = async (id: string) => {
     try {
       const res = await fetch(`/api/admin/sensitive-words/${id}`, {
         method: 'DELETE',
@@ -481,12 +483,12 @@ function SensitiveTab({ token }: { token: string }) {
         <div className="flex flex-wrap gap-2">
           {words.map((w) => (
             <span
-              key={w.id}
+              key={w._id || w.id}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-cream/70 text-sm font-body group hover:border-soft-pink/30 transition-colors"
             >
               {w.word}
               <button
-                onClick={() => deleteWord(w.id)}
+                onClick={() => deleteWord(w._id || w.id)}
                 className="text-cream/30 hover:text-soft-pink transition-colors"
               >
                 <X className="w-3.5 h-3.5" />

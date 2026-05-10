@@ -1,11 +1,8 @@
 import { Router, type Request, type Response } from 'express'
-import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import { authenticate, type AuthRequest, JWT_SECRET } from '../middleware/auth.js'
+import bcrypt from 'bcryptjs'
 import {
-  getAdminUser,
   getSubmissions,
-  getSubmissionById,
   updateSubmissionStatus,
   deleteSubmission,
   batchUpdateStatus,
@@ -13,191 +10,197 @@ import {
   getSensitiveWords,
   addSensitiveWord,
   deleteSensitiveWord,
-  getStats
+  getAdminUser,
+  getStats,
+  initAdminUser,
+  initSensitiveWords
 } from '../db.js'
 
 const router = Router()
 
+const JWT_SECRET = process.env.JWT_SECRET || 'goodnight-secret-key-h2io-2024'
+
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, password } = req.body
-    if (!username || !password) {
-      res.status(400).json({ success: false, error: '请提供用户名和密码' })
-      return
-    }
 
-    const user = await getAdminUser(username)
-    if (!user) {
+    const admin = await getAdminUser(username)
+    if (!admin) {
       res.status(401).json({ success: false, error: '用户名或密码错误' })
       return
     }
 
-    const isValid = await bcrypt.compare(password, user.password_hash)
+    const isValid = bcrypt.compareSync(password, admin.password_hash)
     if (!isValid) {
       res.status(401).json({ success: false, error: '用户名或密码错误' })
       return
     }
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    )
-
-    res.json({ success: true, token })
+    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: '8h' })
+    res.json({ success: true, token, username })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.use(authenticate)
-
-router.get('/submissions', async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/submissions', async (req: Request, res: Response): Promise<void> => {
   try {
-    const type = req.query.type as string | undefined
-    const status = req.query.status as string | undefined
-    const search = req.query.search as string | undefined
-    const page = parseInt(req.query.page as string) || 1
-    const limit = parseInt(req.query.limit as string) || 20
+    const { type, status, search, page = '1', limit = '20' } = req.query
 
-    const result = await getSubmissions({ type, status, search, page, limit })
-    res.json({ success: true, ...result })
+    const result = await getSubmissions({
+      type: type as string,
+      status: status as string,
+      search: search as string,
+      page: parseInt(page as string),
+      limit: parseInt(limit as string)
+    })
+
+    res.json({ success: true, data: result.data, pagination: { total: result.total, page: result.page, limit: result.limit } })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.put('/submissions/batch', async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/submissions/:id/status', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { ids, status } = req.body
-    if (!Array.isArray(ids) || ids.length === 0) {
-      res.status(400).json({ success: false, error: '请提供有效的ID列表' })
-      return
-    }
-    if (!['approved', 'rejected'].includes(status)) {
-      res.status(400).json({ success: false, error: '状态必须为 approved 或 rejected' })
+    const { id } = req.params
+    const { status } = req.body
+
+    if (!['approved', 'rejected', 'pending'].includes(status)) {
+      res.status(400).json({ success: false, error: '无效的状态值' })
       return
     }
 
-    const count = await batchUpdateStatus(ids, status)
-    res.json({ success: true, count })
+    const success = await updateSubmissionStatus(id, status)
+    if (success) {
+      res.json({ success: true, message: '状态更新成功' })
+    } else {
+      res.status(404).json({ success: false, error: '投稿不存在' })
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.delete('/submissions/batch', async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/submissions/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const success = await deleteSubmission(id)
+    if (success) {
+      res.json({ success: true, message: '删除成功' })
+    } else {
+      res.status(404).json({ success: false, error: '投稿不存在' })
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: '服务器内部错误' })
+  }
+})
+
+router.post('/submissions/batch/approve', async (req: Request, res: Response): Promise<void> => {
   try {
     const { ids } = req.body
-    if (!Array.isArray(ids) || ids.length === 0) {
-      res.status(400).json({ success: false, error: '请提供有效的ID列表' })
+    if (!Array.isArray(ids)) {
+      res.status(400).json({ success: false, error: 'ids 必须是数组' })
+      return
+    }
+
+    const count = await batchUpdateStatus(ids, 'approved')
+    res.json({ success: true, message: `成功通过 ${count} 条投稿`, count })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '服务器内部错误' })
+  }
+})
+
+router.post('/submissions/batch/reject', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { ids } = req.body
+    if (!Array.isArray(ids)) {
+      res.status(400).json({ success: false, error: 'ids 必须是数组' })
+      return
+    }
+
+    const count = await batchUpdateStatus(ids, 'rejected')
+    res.json({ success: true, message: `成功拒绝 ${count} 条投稿`, count })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '服务器内部错误' })
+  }
+})
+
+router.delete('/submissions/batch', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { ids } = req.body
+    if (!Array.isArray(ids)) {
+      res.status(400).json({ success: false, error: 'ids 必须是数组' })
       return
     }
 
     const count = await batchDeleteSubmissions(ids)
-    res.json({ success: true, count })
+    res.json({ success: true, message: `成功删除 ${count} 条投稿`, count })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.put('/submissions/:id/status', async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const id = parseInt(req.params.id)
-    const { status } = req.body
-
-    if (isNaN(id)) {
-      res.status(400).json({ success: false, error: '无效的ID' })
-      return
-    }
-    if (!['approved', 'rejected'].includes(status)) {
-      res.status(400).json({ success: false, error: '状态必须为 approved 或 rejected' })
-      return
-    }
-
-    const submission = await getSubmissionById(id)
-    if (!submission) {
-      res.status(404).json({ success: false, error: '投稿不存在' })
-      return
-    }
-
-    await updateSubmissionStatus(id, status)
-    res.json({ success: true })
-  } catch (error) {
-    res.status(500).json({ success: false, error: '服务器内部错误' })
-  }
-})
-
-router.delete('/submissions/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const id = parseInt(req.params.id)
-    if (isNaN(id)) {
-      res.status(400).json({ success: false, error: '无效的ID' })
-      return
-    }
-
-    const submission = await getSubmissionById(id)
-    if (!submission) {
-      res.status(404).json({ success: false, error: '投稿不存在' })
-      return
-    }
-
-    await deleteSubmission(id)
-    res.json({ success: true })
-  } catch (error) {
-    res.status(500).json({ success: false, error: '服务器内部错误' })
-  }
-})
-
-router.get('/sensitive-words', async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/sensitive-words', async (req: Request, res: Response): Promise<void> => {
   try {
     const words = await getSensitiveWords()
-    res.json({ success: true, words })
+    res.json({ success: true, data: words })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.post('/sensitive-words', async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/sensitive-words', async (req: Request, res: Response): Promise<void> => {
   try {
     const { word } = req.body
-    if (!word || typeof word !== 'string' || word.trim().length === 0) {
-      res.status(400).json({ success: false, error: '请提供有效的敏感词' })
+    if (!word || word.trim() === '') {
+      res.status(400).json({ success: false, error: '敏感词不能为空' })
       return
     }
 
     const id = await addSensitiveWord(word.trim())
-    res.json({ success: true, id })
-  } catch (error: any) {
-    if (error.message?.includes('UNIQUE constraint')) {
-      res.status(409).json({ success: false, error: '该敏感词已存在' })
-      return
+    if (id) {
+      res.json({ success: true, message: '添加成功', id })
+    } else {
+      res.status(500).json({ success: false, error: '添加失败' })
     }
-    res.status(500).json({ success: false, error: '服务器内部错误' })
-  }
-})
-
-router.delete('/sensitive-words/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const id = parseInt(req.params.id)
-    if (isNaN(id)) {
-      res.status(400).json({ success: false, error: '无效的ID' })
-      return
-    }
-
-    await deleteSensitiveWord(id)
-    res.json({ success: true })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
   }
 })
 
-router.get('/stats', async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/sensitive-words/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const success = await deleteSensitiveWord(id)
+    if (success) {
+      res.json({ success: true, message: '删除成功' })
+    } else {
+      res.status(404).json({ success: false, error: '敏感词不存在' })
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: '服务器内部错误' })
+  }
+})
+
+router.get('/stats', async (req: Request, res: Response): Promise<void> => {
   try {
     const stats = await getStats()
     res.json({ success: true, data: stats })
   } catch (error) {
     res.status(500).json({ success: false, error: '服务器内部错误' })
+  }
+})
+
+router.get('/init', async (req: Request, res: Response): Promise<void> => {
+  try {
+    await initAdminUser()
+    await initSensitiveWords()
+    res.json({ success: true, message: '初始化完成' })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '初始化失败' })
   }
 })
 

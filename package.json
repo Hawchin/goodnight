@@ -15,6 +15,7 @@
     "postinstall": "npm run build"
   },
   "dependencies": {
+    "@cloudbase/node-sdk": "^3.18.1",
     "@supabase/supabase-js": "^2.105.4",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.7.0",

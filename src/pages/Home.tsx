@@ -5,7 +5,7 @@ import StarField from '@/components/StarField'
 import SubmissionCard from '@/components/SubmissionCard'
 
 interface ParsedSubmission {
-  id: number
+  id: string
   types: string[]
   text_content: string | null
   image_urls: string[] | null
@@ -32,7 +32,7 @@ export default function Home() {
         const parsedTypes: string[] = JSON.parse(sub.types || '[]')
         const parsedImages: string[] | null = sub.image_urls ? JSON.parse(sub.image_urls) : null
         setSubmission({
-          id: sub.id,
+          id: sub._id || sub.id,
           types: parsedTypes,
           text_content: sub.text_content,
           image_urls: parsedImages,
